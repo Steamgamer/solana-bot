@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solana Meme Coin Tracker</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #1a1a1a; color: #fff; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: #333; padding: 15px; margin-bottom: 10px; border-radius: 8px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; }
+        button:hover { background: #0056b3; }
+        .status { color: #4caf50; }
+        .loss { color: #f44336; }
+        input { padding: 8px; margin: 5px; width: 200px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Solana Meme Coin Bot</h1>
+        <div class="card">
+            <h3>Connect Phantom Wallet</h3>
+            <button id="connectBtn">Connect Wallet</button>
+            <p id="walletAddress">Not connected</p>
+        </div>
+        <div class="card">
+            <h3>Track & Auto-Buy</h3>
+            <input type="text" id="tokenAddress" placeholder="Token Address">
+            <button id="trackBtn">Track Token</button>
+            <p id="trackingStatus">No token tracked</p>
+        </div>
+        <div class="card">
+            <h3>Transaction History</h3>
+            <ul id="txList"></ul>
+        </div>
+    </div>
+
+    <script>
+        // Replace with your actual Notrack API key
+        const API_KEY = 'sk-notrack-34ea02d4901e846e2422ea5393b7707a909fc0a9814b84b1';
+        const API_URL = 'https://api.notrack.ai/v1/chat/completions';
+
+        let walletAddress = null;
+
+        // Connect to Phantom Wallet
+        document.getElementById('connectBtn').addEventListener('click', async () => {
+            if (window.solana && window.solana.isPhantom) {
+                try {
+                    const response = await window.solana.connect();
+                    walletAddress = response.publicKey.toString();
+                    document.getElementById('walletAddress').textContent = `Connected: ${walletAddress}`;
+                    addTransaction('Wallet Connected', 'success');
+                } catch (err) {
+                    alert('Failed to connect wallet');
+                }
+            } else {
+                alert('Please install Phantom Wallet');
+            }
+        });
+
+        // Track Token via Notrack API
+        document.getElementById('trackBtn').addEventListener('click', async () => {
+            const tokenAddress = document.getElementById('tokenAddress').value;
+            if (!tokenAddress) return alert('Enter a token address');
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'notrack-uncensored',
+                        messages: [{ role: 'user', content: `Analyze token ${tokenAddress} on Solana.` }]
+                    })
+                });
+                const data = await response.json();
+                console.log('Token Analysis:', data);
+                
+                // Simulate auto-buy logic here
+                addTransaction(`Tracking ${tokenAddress}`, 'success');
+                document.getElementById('trackingStatus').textContent = `Tracking ${tokenAddress}`;
+                
+                // Example: Auto-buy $1 worth of the token
+                // You would need to implement the actual SPL token transfer logic here
+                // using @solana/web3.js or similar library
+                
+            } catch (err) {
+                console.error(err);
+                addTransaction('Error analyzing token', 'loss');
+            }
+        });
+
+        function addTransaction(message, type) {
+            const li = document.createElement('li');
+            li.textContent = message;
+            li.className = type === 'success' ? 'status' : 'loss';
+            document.getElementById('txList').appendChild(li);
+        }
+    </script>
+</body>
+</html>
