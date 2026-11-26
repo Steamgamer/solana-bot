@@ -4,8 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Meme Coin Tracker</title>
-    <!-- Load Solana Web3.js v1.x (Stable IIFE build for browser) -->
-    <script src="https://unpkg.com"></script>
+    <script>
+        // Dynamically load Solana Web3.js v1.95.8 so the URL never gets truncated
+        const web3Script = document.createElement('script');
+        web3Script.src = 'https://' + 'cdn.jsdelivr.net' + '/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js';
+        document.head.appendChild(web3Script);
+    </script>
     <style>
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
@@ -63,7 +67,7 @@
             border-color: #00d4ff;
         }
         button { 
-            background: #ab9ff2; /* Phantom Purple */
+            background: #ab9ff2;
             color: #121212; 
             font-weight: 600;
             border: none; 
@@ -130,11 +134,9 @@
         let provider = null;
         let firstTx = true;
 
-        // Safely detect Phantom Wallet across different Chrome/Mac injection states
         function getPhantomProvider() {
             if ('phantom' in window) {
-                const anyWindow = window;
-                const p = anyWindow.phantom?.solana;
+                const p = window.phantom?.solana;
                 if (p?.isPhantom) return p;
             }
             if (window.solana?.isPhantom) {
@@ -143,8 +145,10 @@
             return null;
         }
 
-        // Initialize Solana Devnet Connection
         function initConnection() {
+            if (typeof solanaWeb3 === 'undefined') {
+                throw new Error('Solana Web3 library is still loading. Wait 2 seconds and try again.');
+            }
             if (!connection) {
                 connection = new solanaWeb3.Connection(
                     solanaWeb3.clusterApiUrl('devnet'),
@@ -153,13 +157,9 @@
             }
         }
 
-        // Auto-check for Phantom once the page fully finishes loading
         window.addEventListener('load', () => {
             setTimeout(() => {
                 provider = getPhantomProvider();
-                if (provider) {
-                    console.log("Phantom provider detected and ready.");
-                }
             }, 300);
         });
 
@@ -168,8 +168,7 @@
             provider = getPhantomProvider();
 
             if (!provider) {
-                alert('Phantom not detected! Make sure:\n1. Phantom extension is unlocked\n2. Extension "Site access" is set to "On all sites"\n3. You refreshed the page (Cmd + Shift + R)');
-                window.open('https://phantom.app', '_blank');
+                alert('Phantom not detected! Unlock Phantom and refresh (Cmd + Shift + R).');
                 return;
             }
 
@@ -201,13 +200,15 @@
             if (!recipientInput || isNaN(amount) || amount <= 0) {
                 return alert('Enter a valid recipient address and SOL amount.');
             }
+            if (typeof solanaWeb3 === 'undefined') {
+                return alert('Solana Web3 library did not load. Check your internet connection and refresh.');
+            }
 
-            // Validate Solana public key format before building transaction
             let toPubkey;
             try {
                 toPubkey = new solanaWeb3.PublicKey(recipientInput);
             } catch (e) {
-                return alert('Invalid Solana wallet address!');
+                return alert('Invalid Solana wallet address: ' + e.message);
             }
 
             const btn = document.getElementById('buyBtn');
@@ -232,7 +233,6 @@
                 transaction.recentBlockhash = blockhash;
                 transaction.feePayer = fromPubkey;
 
-                // Sign and send via Phantom
                 const { signature } = await provider.signAndSendTransaction(transaction);
                 
                 status.textContent = "Confirming on Solana Devnet...";
@@ -243,22 +243,23 @@
                     lastValidBlockHeight
                 }, 'confirmed');
 
-                status.innerHTML = `Success! <a href="https://solscan.io{signature}?cluster=devnet" target="_blank">View on Solscan</a>`;
+                const solscanUrl = 'https://' + 'solscan.io' + `/tx/${signature}?cluster=devnet`;
+                status.innerHTML = `Success! <a href="${solscanUrl}" target="_blank">View on Solscan</a>`;
                 status.className = 'status win';
                 
-                addTx(`Sent ${amount} SOL to ${recipientInput.slice(0, 4)}...${recipientInput.slice(-4)}`, 'win', signature);
+                addTx(`Sent ${amount} SOL to ${recipientInput.slice(0, 4)}...${recipientInput.slice(-4)}`, 'win', solscanUrl);
             } catch (err) {
                 console.error(err);
                 status.textContent = "Error: " + (err.message || "Transaction failed");
                 status.className = 'status loss';
-                addTx(`Failed: ${err.message.slice(0, 30)}...`, 'loss');
+                addTx(`Failed: ${err.message.slice(0, 35)}...`, 'loss');
             } finally {
                 btn.disabled = false;
             }
         });
 
         // 3. Log Transactions to UI
-        function addTx(message, type, signature = null) {
+        function addTx(message, type, url = null) {
             const list = document.getElementById('txList');
             if (firstTx) {
                 list.innerHTML = '';
@@ -268,10 +269,9 @@
             const div = document.createElement('div');
             div.className = 'tx-item';
             
-            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const linkHtml = signature 
-                ? ` <a href="https://solscan.io{signature}?cluster=devnet" target="_blank">[Tx]</a>` 
-                : '';
+            const now = new Date();
+            const time = now.toTimeString().split(' ')[0];
+            const linkHtml = url ? ` <a href="${url}" target="_blank">[Tx]</a>` : '';
 
             div.innerHTML = `<span>${message}${linkHtml}</span> <span class="tx-time">${time}</span>`;
             if (type === 'loss') div.style.color = '#f44336';
