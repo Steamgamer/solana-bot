@@ -4,99 +4,138 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Meme Coin Tracker</title>
+    <!-- Load Solana Web3.js from CDN -->
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; background: #1a1a1a; color: #fff; padding: 20px; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .card { background: #333; padding: 15px; margin-bottom: 10px; border-radius: 8px; }
-        button { background: #007bff; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #121212; color: #e0e0e0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        h1 { text-align: center; color: #00d4ff; }
+        .card { background: #2c2c2c; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #333; }
+        button { background: #007bff; color: white; border: none; padding: 10px 15px; cursor: pointer; border-radius: 5px; font-size: 14px; margin-right: 5px; }
         button:hover { background: #0056b3; }
-        .status { color: #4caf50; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        input { padding: 8px; width: 70%; border: 1px solid #444; background: #333; color: white; border-radius: 4px; }
+        .status { margin-top: 10px; font-size: 14px; }
+        .win { color: #4caf50; }
         .loss { color: #f44336; }
-        input { padding: 8px; margin: 5px; width: 200px; }
+        .tx-item { padding: 5px 0; border-bottom: 1px solid #333; display: flex; justify-content: space-between; }
+        .tx-time { color: #888; font-size: 12px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Solana Meme Coin Bot</h1>
+        <h1>Solana Meme Bot</h1>
+        
         <div class="card">
-            <h3>Connect Phantom Wallet</h3>
-            <button id="connectBtn">Connect Wallet</button>
-            <p id="walletAddress">Not connected</p>
+            <h3>1. Connect Wallet</h3>
+            <button id="connectBtn">Connect Phantom</button>
+            <p id="walletAddress" class="status">Not connected</p>
         </div>
+
         <div class="card">
-            <h3>Track & Auto-Buy</h3>
-            <input type="text" id="tokenAddress" placeholder="Token Address">
-            <button id="trackBtn">Track Token</button>
-            <p id="trackingStatus">No token tracked</p>
+            <h3>2. Auto-Buy (Send SOL)</h3>
+            <input type="text" id="recipientAddress" placeholder="Paste Recipient Address (e.g., Token Mint)">
+            <input type="number" id="amount" placeholder="Amount (SOL)" step="0.01">
+            <button id="buyBtn">Buy/Send</button>
+            <p id="buyStatus" class="status"></p>
         </div>
+
         <div class="card">
-            <h3>Transaction History</h3>
-            <ul id="txList"></ul>
+            <h3>3. Transaction History</h3>
+            <div id="txList"></div>
         </div>
     </div>
 
     <script>
-        // Replace with your actual Notrack API key
+        // YOUR NOTRACK API KEY
         const API_KEY = 'sk-notrack-34ea02d4901e846e2422ea5393b7707a909fc0a9814b84b1';
         const API_URL = 'https://api.notrack.ai/v1/chat/completions';
 
         let walletAddress = null;
+        let connection;
 
-        // Connect to Phantom Wallet
+        // Initialize Solana Connection
+        function initConnection() {
+            connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('devnet'), 'confirmed');
+        }
+
+        // 1. Connect to Phantom
         document.getElementById('connectBtn').addEventListener('click', async () => {
             if (window.solana && window.solana.isPhantom) {
                 try {
                     const response = await window.solana.connect();
                     walletAddress = response.publicKey.toString();
                     document.getElementById('walletAddress').textContent = `Connected: ${walletAddress}`;
-                    addTransaction('Wallet Connected', 'success');
+                    document.getElementById('walletAddress').className = 'status win';
+                    addTx('Wallet Connected', 'success');
+                    initConnection();
                 } catch (err) {
-                    alert('Failed to connect wallet');
+                    alert('Connection failed: ' + err.message);
                 }
             } else {
-                alert('Please install Phantom Wallet');
+                alert('Please install Phantom Wallet!');
             }
         });
 
-        // Track Token via Notrack API
-        document.getElementById('trackBtn').addEventListener('click', async () => {
-            const tokenAddress = document.getElementById('tokenAddress').value;
-            if (!tokenAddress) return alert('Enter a token address');
+        // 2. Buy Logic (Real Transaction)
+        document.getElementById('buyBtn').addEventListener('click', async () => {
+            const recipient = document.getElementById('recipientAddress').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+
+            if (!recipient || !amount) return alert('Enter recipient address and amount');
+            if (!walletAddress) return alert('Connect wallet first');
+
+            const btn = document.getElementById('buyBtn');
+            const status = document.getElementById('buyStatus');
+            btn.disabled = true;
+            status.textContent = "Processing transaction...";
 
             try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${API_KEY}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        model: 'notrack-uncensored',
-                        messages: [{ role: 'user', content: `Analyze token ${tokenAddress} on Solana.` }]
+                // Create a transaction
+                const transaction = new solanaWeb3.Transaction();
+                
+                // Add instruction to transfer SOL
+                transaction.add(
+                    solanaWeb3.SystemProgram.transfer({
+                        fromPubkey: new solanaWeb3.PublicKey(walletAddress),
+                        toPubkey: new solanaWeb3.PublicKey(recipient),
+                        lamports: amount * solanaWeb3.LAMPORTS_PER_SOL,
                     })
-                });
-                const data = await response.json();
-                console.log('Token Analysis:', data);
+                );
+
+                // Get recent blockhash
+                const { blockhash } = await connection.getLatestBlockhash();
+                transaction.recentBlockhash = blockhash;
+                transaction.feePayer = new solanaWeb3.PublicKey(walletAddress);
+
+                // Sign and send transaction
+                const signedTransaction = await window.solana.signTransaction(transaction);
+                const signature = await connection.sendRawTransaction(signedTransaction.serialize());
                 
-                // Simulate auto-buy logic here
-                addTransaction(`Tracking ${tokenAddress}`, 'success');
-                document.getElementById('trackingStatus').textContent = `Tracking ${tokenAddress}`;
-                
-                // Example: Auto-buy $1 worth of the token
-                // You would need to implement the actual SPL token transfer logic here
-                // using @solana/web3.js or similar library
-                
+                // Wait for confirmation
+                await connection.confirmTransaction(signature);
+
+                status.textContent = "Transaction Successful!";
+                status.className = 'status win';
+                addTx(`Sent ${amount} SOL to ${recipient.substring(0,6)}...`, 'win');
+                btn.disabled = false;
+
             } catch (err) {
                 console.error(err);
-                addTransaction('Error analyzing token', 'loss');
+                status.textContent = "Error: " + err.message;
+                status.className = 'status loss';
+                btn.disabled = false;
             }
         });
 
-        function addTransaction(message, type) {
-            const li = document.createElement('li');
-            li.textContent = message;
-            li.className = type === 'success' ? 'status' : 'loss';
-            document.getElementById('txList').appendChild(li);
+        function addTx(message, type) {
+            const list = document.getElementById('txList');
+            const div = document.createElement('div');
+            div.className = 'tx-item';
+            const time = new Date().toLocaleTimeString();
+            div.innerHTML = `<span>${message}</span> <span class="tx-time">${time}</span>`;
+            if(type === 'loss') div.style.color = '#f44336';
+            list.insertBefore(div, list.firstChild);
         }
     </script>
 </body>
