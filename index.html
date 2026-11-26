@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Solana Meme Coin Tracker</title>
+    <title>Solana Meme Coin Sniper</title>
     <script>
-        // 1. Load Buffer polyfill first (required by @solana/web3.js in browsers)
+        // 1. Load Buffer polyfill first
         const bufferScript = document.createElement('script');
         bufferScript.src = 'https://' + 'bundle.run' + '/buffer@6.0.3';
         bufferScript.onload = () => {
             window.Buffer = window.buffer.Buffer;
-            // 2. Load Solana Web3.js after Buffer is ready
+            // 2. Load Solana Web3.js v1.95.8 after Buffer is ready
             const web3Script = document.createElement('script');
             web3Script.src = 'https://' + 'cdn.jsdelivr.net' + '/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js';
             document.head.appendChild(web3Script);
@@ -27,7 +27,7 @@
         }
         .container { 
             max-width: 550px; 
-            margin: 40px auto; 
+            margin: 30px auto; 
             background: #1e1e1e; 
             padding: 25px; 
             border-radius: 12px; 
@@ -38,7 +38,16 @@
             text-align: center; 
             color: #00d4ff; 
             margin-top: 0;
+            margin-bottom: 5px;
             font-size: 24px;
+        }
+        .network-badge {
+            text-align: center;
+            font-size: 11px;
+            color: #4caf50;
+            margin-bottom: 20px;
+            font-weight: 600;
+            letter-spacing: 1px;
         }
         .card { 
             background: #252525; 
@@ -52,6 +61,17 @@
             margin-bottom: 12px;
             font-size: 16px;
             color: #ffffff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .balance-tag {
+            background: #181818;
+            color: #00d4ff;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            border: 1px solid #333;
         }
         .input-group {
             display: flex;
@@ -59,7 +79,11 @@
             gap: 10px;
             margin-bottom: 12px;
         }
-        input { 
+        .row {
+            display: flex;
+            gap: 10px;
+        }
+        input, select { 
             padding: 10px 12px; 
             width: 100%; 
             box-sizing: border-box;
@@ -69,7 +93,7 @@
             border-radius: 6px; 
             font-size: 14px;
         }
-        input:focus {
+        input:focus, select:focus {
             outline: none;
             border-color: #00d4ff;
         }
@@ -89,6 +113,15 @@
         #buyBtn {
             background: #00d4ff;
             width: 100%;
+            font-size: 15px;
+            padding: 12px;
+        }
+        .refresh-btn {
+            background: #333;
+            color: #ccc;
+            padding: 4px 8px;
+            font-size: 11px;
+            margin-left: 6px;
         }
         .status { margin-top: 10px; margin-bottom: 0; font-size: 13px; word-break: break-all; }
         .win { color: #4caf50; }
@@ -110,20 +143,33 @@
 <body>
     <div class="container">
         <h1>Solana Meme Bot</h1>
+        <div class="network-badge">● MAINNET LIVE</div>
         
         <div class="card">
-            <h3>1. Connect Wallet</h3>
+            <h3>
+                <span>1. Connect Wallet</span>
+                <span id="solBalance" class="balance-tag" style="display:none;">0.0000 SOL</span>
+            </h3>
             <button id="connectBtn">Connect Phantom</button>
+            <button id="refreshBalBtn" class="refresh-btn" style="display:none;">↻ Refresh</button>
             <p id="walletAddress" class="status">Not connected</p>
         </div>
 
         <div class="card">
-            <h3>2. Auto-Buy (Send SOL - Devnet)</h3>
+            <h3>2. Buy Meme Coin (Jupiter Swap)</h3>
             <div class="input-group">
-                <input type="text" id="recipientAddress" placeholder="Paste Recipient Wallet Address">
-                <input type="number" id="amount" placeholder="Amount (SOL)" step="0.01" min="0.001">
+                <input type="text" id="tokenMint" placeholder="Paste Token Mint Address (CA)">
+                <div class="row">
+                    <input type="number" id="amount" placeholder="SOL Amount (e.g. 0.01)" step="0.005" min="0.001">
+                    <select id="slippage">
+                        <option value="100">1% Slippage</option>
+                        <option value="300" selected>3% Slippage</option>
+                        <option value="500">5% Slippage</option>
+                        <option value="1000">10% Slippage</option>
+                    </select>
+                </div>
             </div>
-            <button id="buyBtn">Buy / Send SOL</button>
+            <button id="buyBtn">Swap SOL → Token</button>
             <p id="buyStatus" class="status"></p>
         </div>
 
@@ -136,6 +182,12 @@
     </div>
 
     <script>
+        // Mainnet Configuration
+        const RPC_URL = 'https://' + 'solana-rpc.publicnode.com';
+        const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+        const JUP_QUOTE_URL = 'https://' + 'quote-api.jup.ag' + '/v6/quote';
+        const JUP_SWAP_URL = 'https://' + 'quote-api.jup.ag' + '/v6/swap';
+
         let walletAddress = null;
         let connection = null;
         let provider = null;
@@ -146,9 +198,7 @@
                 const p = window.phantom?.solana;
                 if (p?.isPhantom) return p;
             }
-            if (window.solana?.isPhantom) {
-                return window.solana;
-            }
+            if (window.solana?.isPhantom) return window.solana;
             return null;
         }
 
@@ -157,10 +207,23 @@
                 throw new Error('Solana Web3 library is still loading. Wait 2 seconds and try again.');
             }
             if (!connection) {
-                connection = new solanaWeb3.Connection(
-                    solanaWeb3.clusterApiUrl('devnet'),
-                    'confirmed'
-                );
+                connection = new solanaWeb3.Connection(RPC_URL, 'confirmed');
+            }
+        }
+
+        async function updateBalance() {
+            if (!walletAddress) return;
+            try {
+                initConnection();
+                const pubkey = new solanaWeb3.PublicKey(walletAddress);
+                const lamports = await connection.getBalance(pubkey);
+                const sol = (lamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(4);
+                const balEl = document.getElementById('solBalance');
+                balEl.textContent = `${sol} SOL`;
+                balEl.style.display = 'inline-block';
+                document.getElementById('refreshBalBtn').style.display = 'inline-block';
+            } catch (err) {
+                console.error('Balance fetch failed:', err);
             }
         }
 
@@ -170,7 +233,7 @@
             }, 300);
         });
 
-        // 1. Connect to Phantom Button
+        // 1. Connect Wallet
         document.getElementById('connectBtn').addEventListener('click', async () => {
             provider = getPhantomProvider();
 
@@ -189,77 +252,105 @@
                 
                 document.getElementById('connectBtn').textContent = 'Wallet Connected';
                 initConnection();
-                addTx('Wallet Connected', 'win');
+                await updateBalance();
+                addTx('Connected to Mainnet', 'win');
             } catch (err) {
                 console.error(err);
                 alert('Connection failed: ' + err.message);
             }
         });
 
-        // 2. Send SOL Logic
+        document.getElementById('refreshBalBtn').addEventListener('click', updateBalance);
+
+        // 2. Jupiter Swap (SOL -> Meme Coin)
         document.getElementById('buyBtn').addEventListener('click', async () => {
-            const recipientInput = document.getElementById('recipientAddress').value.trim();
-            const amount = parseFloat(document.getElementById('amount').value);
+            const outputMint = document.getElementById('tokenMint').value.trim();
+            const solAmount = parseFloat(document.getElementById('amount').value);
+            const slippageBps = parseInt(document.getElementById('slippage').value, 10);
 
             if (!walletAddress || !provider) {
                 return alert('Connect your Phantom wallet first!');
             }
-            if (!recipientInput || isNaN(amount) || amount <= 0) {
-                return alert('Enter a valid recipient address and SOL amount.');
+            if (!outputMint || isNaN(solAmount) || solAmount <= 0) {
+                return alert('Enter a valid Token Mint address (CA) and SOL amount.');
             }
-            if (typeof solanaWeb3 === 'undefined') {
-                return alert('Solana Web3 library is still loading. Wait 2 seconds and try again.');
+            if (outputMint === WSOL_MINT) {
+                return alert('Paste the Meme Coin Mint address, not Wrapped SOL.');
             }
 
-            let toPubkey;
+            // Validate Mint PublicKey
             try {
-                toPubkey = new solanaWeb3.PublicKey(recipientInput);
+                new solanaWeb3.PublicKey(outputMint);
             } catch (e) {
-                return alert('Invalid Solana wallet address: ' + e.message);
+                return alert('Invalid Token Mint address format!');
             }
 
             const btn = document.getElementById('buyBtn');
             const status = document.getElementById('buyStatus');
             btn.disabled = true;
             status.className = 'status';
-            status.textContent = "Waiting for Phantom approval...";
+            status.textContent = '1/3 Fetching best route from Jupiter...';
 
             try {
                 initConnection();
-                const fromPubkey = new solanaWeb3.PublicKey(walletAddress);
+                const lamports = Math.round(solAmount * solanaWeb3.LAMPORTS_PER_SOL);
 
-                const transaction = new solanaWeb3.Transaction().add(
-                    solanaWeb3.SystemProgram.transfer({
-                        fromPubkey: fromPubkey,
-                        toPubkey: toPubkey,
-                        lamports: Math.round(amount * solanaWeb3.LAMPORTS_PER_SOL),
-                    })
+                // Step A: Get Quote
+                const quoteRes = await fetch(
+                    `${JUP_QUOTE_URL}?inputMint=${WSOL_MINT}&outputMint=${outputMint}&amount=${lamports}&slippageBps=${slippageBps}`
                 );
+                const quoteResponse = await quoteRes.json();
 
-                const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-                transaction.recentBlockhash = blockhash;
-                transaction.feePayer = fromPubkey;
+                if (!quoteRes.ok || quoteResponse.error) {
+                    throw new Error(quoteResponse.error || 'No liquidity route found for this token');
+                }
 
+                // Step B: Get Serialized Swap Transaction
+                status.textContent = '2/3 Building swap transaction...';
+                const swapRes = await fetch(JUP_SWAP_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        quoteResponse,
+                        userPublicKey: walletAddress,
+                        wrapAndUnwrapSol: true,
+                        dynamicComputeUnitLimit: true,
+                        prioritizationFeeLamports: 'auto'
+                    })
+                });
+                const swapData = await swapRes.json();
+
+                if (!swapRes.ok || !swapData.swapTransaction) {
+                    throw new Error(swapData.error || 'Failed to build swap transaction');
+                }
+
+                // Step C: Deserialize VersionedTransaction & Sign via Phantom
+                const swapTransactionBuf = Buffer.from(swapData.swapTransaction, 'base64');
+                const transaction = solanaWeb3.VersionedTransaction.deserialize(swapTransactionBuf);
+
+                status.textContent = '3/3 Waiting for Phantom approval...';
                 const { signature } = await provider.signAndSendTransaction(transaction);
-                
-                status.textContent = "Confirming on Solana Devnet...";
 
+                status.textContent = 'Confirming swap on Mainnet...';
+                const latestBlockhash = await connection.getLatestBlockhash('confirmed');
                 await connection.confirmTransaction({
                     signature,
-                    blockhash,
-                    lastValidBlockHeight
+                    blockhash: latestBlockhash.blockhash,
+                    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
                 }, 'confirmed');
 
-                const solscanUrl = 'https://' + 'solscan.io' + `/tx/${signature}?cluster=devnet`;
-                status.innerHTML = `Success! <a href="${solscanUrl}" target="_blank">View on Solscan</a>`;
+                const solscanUrl = 'https://' + 'solscan.io' + `/tx/${signature}`;
+                status.innerHTML = `Swap Confirmed! <a href="${solscanUrl}" target="_blank">View on Solscan</a>`;
                 status.className = 'status win';
-                
-                addTx(`Sent ${amount} SOL to ${recipientInput.slice(0, 4)}...${recipientInput.slice(-4)}`, 'win', solscanUrl);
+
+                addTx(`Bought ${outputMint.slice(0, 4)}...${outputMint.slice(-4)} (${solAmount} SOL)`, 'win', solscanUrl);
+                await updateBalance();
+
             } catch (err) {
                 console.error(err);
-                status.textContent = "Error: " + (err.message || "Transaction failed");
+                status.textContent = 'Error: ' + (err.message || 'Swap failed');
                 status.className = 'status loss';
-                addTx(`Failed: ${err.message.slice(0, 35)}...`, 'loss');
+                addTx(`Swap Failed: ${err.message.slice(0, 32)}...`, 'loss');
             } finally {
                 btn.disabled = false;
             }
@@ -276,7 +367,7 @@
             const div = document.createElement('div');
             div.className = 'tx-item';
             
-            const time = new Date().toTimeString().split(' ')[0];
+            const time = new Date().toTimeString().split(' ');
             const linkHtml = url ? ` <a href="${url}" target="_blank">[Tx]</a>` : '';
 
             div.innerHTML = `<span>${message}${linkHtml}</span> <span class="tx-time">${time}</span>`;
