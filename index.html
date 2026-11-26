@@ -5,10 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solana Meme Coin Tracker</title>
     <script>
-        // Dynamically load Solana Web3.js v1.95.8 so the URL never gets truncated
-        const web3Script = document.createElement('script');
-        web3Script.src = 'https://' + 'cdn.jsdelivr.net' + '/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js';
-        document.head.appendChild(web3Script);
+        // 1. Load Buffer polyfill first (required by @solana/web3.js in browsers)
+        const bufferScript = document.createElement('script');
+        bufferScript.src = 'https://' + 'bundle.run' + '/buffer@6.0.3';
+        bufferScript.onload = () => {
+            window.Buffer = window.buffer.Buffer;
+            // 2. Load Solana Web3.js after Buffer is ready
+            const web3Script = document.createElement('script');
+            web3Script.src = 'https://' + 'cdn.jsdelivr.net' + '/npm/@solana/web3.js@1.95.8/lib/index.iife.min.js';
+            document.head.appendChild(web3Script);
+        };
+        document.head.appendChild(bufferScript);
     </script>
     <style>
         body { 
@@ -201,7 +208,7 @@
                 return alert('Enter a valid recipient address and SOL amount.');
             }
             if (typeof solanaWeb3 === 'undefined') {
-                return alert('Solana Web3 library did not load. Check your internet connection and refresh.');
+                return alert('Solana Web3 library is still loading. Wait 2 seconds and try again.');
             }
 
             let toPubkey;
@@ -269,8 +276,7 @@
             const div = document.createElement('div');
             div.className = 'tx-item';
             
-            const now = new Date();
-            const time = now.toTimeString().split(' ')[0];
+            const time = new Date().toTimeString().split(' ')[0];
             const linkHtml = url ? ` <a href="${url}" target="_blank">[Tx]</a>` : '';
 
             div.innerHTML = `<span>${message}${linkHtml}</span> <span class="tx-time">${time}</span>`;
